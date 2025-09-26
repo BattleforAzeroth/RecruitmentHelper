@@ -1,4 +1,4 @@
-﻿#include "inputsimulator.h"
+#include "inputsimulator.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QDebug>

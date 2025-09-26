@@ -30,20 +30,20 @@ private slots:
     void onSnippetButtonClicked();
     void toggleAlwaysOnTop();
     void saveWindowGeometry();
-
+    
 private:
     void createUI();
     void loadSettings();
     void calculateOptimalSize();
     int calculateMaxRowWidth(const QVector<Snippet> &snippets);
-
+    
     QScrollArea *m_scrollArea;
     QWidget *m_centralWidget;
     QVBoxLayout *m_mainLayout;
-
+    
     SnippetManager m_snippetManager;
     InputSimulator m_inputSimulator;
-
+    
     bool m_alwaysOnTop;
     QPoint m_dragPosition;
     bool m_isDragging;

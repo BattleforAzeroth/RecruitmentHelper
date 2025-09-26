@@ -1,4 +1,4 @@
-﻿#include "snippetmanager.h"
+#include "snippetmanager.h"
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>

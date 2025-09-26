@@ -1,4 +1,4 @@
-﻿#ifndef SNIPPETMANAGER_H
+#ifndef SNIPPETMANAGER_H
 #define SNIPPETMANAGER_H
 
 #include <QObject>
@@ -28,7 +28,7 @@ public:
     bool loadFromFile(const QString &filename);
     bool loadFromJson(const QJsonDocument &jsonDoc);
     QVector<SnippetGroup> getGroups() const;
-
+    
 private:
     QVector<SnippetGroup> m_groups;
 };
