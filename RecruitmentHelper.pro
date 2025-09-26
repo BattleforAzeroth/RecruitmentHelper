@@ -2,28 +2,34 @@ QT       += core gui
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-TARGET = RecruitmentHelper
+TARGET = AutumnRecruitHelper
 TEMPLATE = app
 
-DEFINES += QT_DEPRECATED_WARNINGS
-
-CONFIG += c++11
-
 SOURCES += \
-        main.cpp \
-        mainwindow.cpp \
-        snippetbutton.cpp \
-        jsonreader.cpp
+    main.cpp \
+    mainwindow.cpp \
+    snippetmanager.cpp \
+    inputsimulator.cpp
 
 HEADERS += \
-        mainwindow.h \
-        snippetbutton.h \
-        jsonreader.h
+    mainwindow.h \
+    snippetmanager.h \
+    inputsimulator.h
 
 RESOURCES += \
-        resources.qrc
+    resources.qrc
 
-# Default rules for deployment.
-qnx: target.path = /tmp/$${TARGET}/bin
-else: unix:!android: target.path = /opt/$${TARGET}/bin
-!isEmpty(target.path): INSTALLS += target
+# 平台特定代码
+win32 {
+    QT += winextras
+    LIBS += -luser32
+}
+
+macx {
+    LIBS += -framework Carbon -framework ApplicationServices
+    QMAKE_CXXFLAGS += -x objective-c++
+}
+
+# 程序图标
+RC_ICONS = resources/icon.ico
+ICON = resources/icon.icns

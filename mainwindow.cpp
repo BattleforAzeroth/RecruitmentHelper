@@ -1,250 +1,296 @@
 #include "mainwindow.h"
 #include <QApplication>
-#include <QClipboard>
-#include <QGroupBox>
-#include <QJsonArray>
-#include <QFile>
-#include <QFileDialog>
-#include <QMessageBox>
 #include <QScreen>
-#include <QScrollArea>
-#include <QDesktopWidget>
+#include <QPushButton>
+#include <QGroupBox>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QMessageBox>
+#include <QCloseEvent>
+#include <QMouseEvent>
+#include <QSettings>
+#include <QFontMetrics>
+#include <QTimer>
+#include <QDebug>
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), m_maxButtonRowWidth(0)
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    m_alwaysOnTop(true),
+    m_isDragging(false),
+    m_maxButtonRowWidth(0)
 {
-    setupUi();
-    
-    // 加载默认JSON文件
-    loadJsonData(":/resources/resume_data.json");
-    
-    // 初始设置为窗口置顶
-    setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
-    m_alwaysOnTopCheckbox->setChecked(true);
-    
-    // 调整窗口大小
-    adjustWindowSize();
+    setWindowTitle("秋招神器");
+    setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+
+    // Set minimum size
+    setMinimumHeight(100);
+    setMinimumWidth(200);
+
+    // Create geometry save timer
+    m_geometrySaveTimer = new QTimer(this);
+    m_geometrySaveTimer->setSingleShot(true);
+    m_geometrySaveTimer->setInterval(500); // 500ms debounce
+    connect(m_geometrySaveTimer, &QTimer::timeout, this, &MainWindow::saveWindowGeometry);
+
+    // Load snippet data
+    if (!m_snippetManager.loadFromFile(":/resources/resume_data.json")) {
+        QMessageBox::critical(this, "错误", "无法加载简历数据文件。");
+    }
+
+    loadSettings();
+    createUI();
+    calculateOptimalSize();
 }
 
 MainWindow::~MainWindow()
 {
+    saveWindowGeometry();
 }
 
-void MainWindow::setupUi()
+void MainWindow::createUI()
 {
-    // 设置中央窗口部件
+    // Create central widget and main layout
     m_centralWidget = new QWidget(this);
+    m_centralWidget->setObjectName("centralWidget");
+    m_centralWidget->setStyleSheet(
+        "QWidget#centralWidget { background-color: #f5f5f5; border: 1px solid #cccccc; }"
+        "QGroupBox { font-weight: bold; border: 1px solid #cccccc; border-radius: 5px; margin-top: 1ex; }"
+        "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top center; }"
+        "QPushButton { background-color: #e6e6e6; border: 1px solid #cccccc; border-radius: 3px; padding: 3px; }"
+        "QPushButton:hover { background-color: #d9d9d9; }"
+        "QPushButton:pressed { background-color: #c2c2c2; }"
+    );
+
     setCentralWidget(m_centralWidget);
-    
-    // 创建一个滚动区域
-    QScrollArea *scrollArea = new QScrollArea(m_centralWidget);
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scrollArea->setFrameShape(QFrame::NoFrame);
-    
-    // 创建内容窗口部件
-    QWidget *contentWidget = new QWidget();
-    scrollArea->setWidget(contentWidget);
-    
-    // 创建主布局
-    m_mainLayout = new QVBoxLayout(contentWidget);
-    m_mainLayout->setSpacing(8);
+
+    // Create scroll area
+    m_scrollArea = new QScrollArea(m_centralWidget);
+    m_scrollArea->setWidgetResizable(true);
+    m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+    // Create container widget for scroll area
+    QWidget *scrollWidget = new QWidget(m_scrollArea);
+    m_scrollArea->setWidget(scrollWidget);
+
+    // Create layout for scroll widget
+    m_mainLayout = new QVBoxLayout(scrollWidget);
+    m_mainLayout->setSpacing(10);
     m_mainLayout->setContentsMargins(10, 10, 10, 10);
-    
-    // 创建标题栏和控制按钮
-    QHBoxLayout *headerLayout = new QHBoxLayout();
-    QLabel *titleLabel = new QLabel("秋招神器", this);
-    titleLabel->setStyleSheet("font-weight: bold; font-size: 14px;");
-    
-    m_alwaysOnTopCheckbox = new QCheckBox("置顶", this);
-    connect(m_alwaysOnTopCheckbox, &QCheckBox::toggled, this, &MainWindow::onAlwaysOnTopToggled);
-    
+
+    // Add a header with drag area and controls
+    QWidget *headerWidget = new QWidget(this);
+    QHBoxLayout *headerLayout = new QHBoxLayout(headerWidget);
+    headerLayout->setContentsMargins(5, 5, 5, 5);
+
+    QLabel *titleLabel = new QLabel("秋招神器", headerWidget);
+    titleLabel->setStyleSheet("font-weight: bold; color: #333333;");
+
+    QPushButton *pinButton = new QPushButton(m_alwaysOnTop ? "取消置顶" : "置顶", headerWidget);
+    pinButton->setFixedSize(60, 20);
+    connect(pinButton, &QPushButton::clicked, [this, pinButton]() {
+        toggleAlwaysOnTop();
+        pinButton->setText(m_alwaysOnTop ? "取消置顶" : "置顶");
+    });
+
+    QPushButton *closeButton = new QPushButton("关闭", headerWidget);
+    closeButton->setFixedSize(50, 20);
+    connect(closeButton, &QPushButton::clicked, this, &QMainWindow::close);
+
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
-    headerLayout->addWidget(m_alwaysOnTopCheckbox);
-    
-    m_mainLayout->addLayout(headerLayout);
-    
-    // 设置中央窗口的布局
-    QVBoxLayout *centralLayout = new QVBoxLayout(m_centralWidget);
-    centralLayout->setContentsMargins(0, 0, 0, 0);
-    centralLayout->addWidget(scrollArea);
-    
-    // 设置窗口样式
-    setWindowTitle("秋招神器");
-    setStyleSheet(
-        "QMainWindow {"
-        "  background-color: #f5f5f5;"
-        "}"
-        "QGroupBox {"
-        "  border: 1px solid #ddd;"
-        "  border-radius: 4px;"
-        "  margin-top: 8px;"
-        "  background-color: #ffffff;"
-        "}"
-        "QGroupBox::title {"
-        "  subcontrol-origin: margin;"
-        "  left: 10px;"
-        "  padding: 0 5px 0 5px;"
-        "  background-color: #ffffff;"
-        "}"
-        "QPushButton {"
-        "  background-color: #e6f2ff;"
-        "  border: 1px solid #b3d9ff;"
-        "  border-radius: 4px;"
-        "}"
-        "QPushButton:hover {"
-        "  background-color: #cce5ff;"
-        "}"
-        "QPushButton:pressed {"
-        "  background-color: #99ccff;"
-        "}"
-    );
-}
+    headerLayout->addWidget(pinButton);
+    headerLayout->addWidget(closeButton);
 
-void MainWindow::loadJsonData(const QString &filePath)
-{
-    // 清除现有的按钮
-    while (QLayoutItem *item = m_mainLayout->takeAt(1)) {
-        if (QWidget *widget = item->widget()) {
-            widget->deleteLater();
-        }
-        delete item;
-    }
-    
-    m_maxButtonRowWidth = 0;
-    
-    // 加载并解析JSON数据
-    bool success = false;
-    if (filePath.startsWith(":/")) {
-        success = m_jsonReader.loadFromFile(filePath);
-    } else {
-        QFile file(filePath);
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QString jsonData = file.readAll();
-            file.close();
-            success = m_jsonReader.loadFromString(jsonData);
-        }
-    }
-    
-    if (!success) {
-        QMessageBox::critical(this, "错误", "无法加载或解析JSON数据");
-        return;
-    }
-    
-    // 创建按钮组
-    createButtonGroups(m_jsonReader.getGroups());
-    
-    // 调整窗口大小
-    adjustWindowSize();
-}
+    m_mainLayout->addWidget(headerWidget);
 
-void MainWindow::createButtonGroups(const QJsonArray &groups)
-{
-    for (int i = 0; i < groups.size(); ++i) {
-        QJsonObject groupObj = groups[i].toObject();
-        createGroupButtons(m_mainLayout, groupObj);
-    }
-}
+    // Add a separator line
+    QFrame *separator = new QFrame(scrollWidget);
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Sunken);
+    m_mainLayout->addWidget(separator);
 
-void MainWindow::createGroupButtons(QVBoxLayout *mainLayout, const QJsonObject &group)
-{
-    QString groupName = group["Name"].toString();
-    QJsonArray snippets = group["Snippets"].toArray();
-    
-    if (snippets.isEmpty()) {
-        return;
-    }
-    
-    // 创建分组框
-    QGroupBox *groupBox = new QGroupBox(groupName);
-    QVBoxLayout *groupLayout = new QVBoxLayout(groupBox);
-    groupLayout->setSpacing(8);
-    
-    QHBoxLayout *currentRowLayout = new QHBoxLayout();
-    int currentRowWidth = 0;
-    const int buttonMargin = 16; // 每个按钮的额外边距
-    
-    // 为每个代码片段创建按钮
-    for (int i = 0; i < snippets.size(); ++i) {
-        QJsonObject snippet = snippets[i].toObject();
-        QString title = snippet["Title"].toString();
-        QString content = snippet["Content"].toString();
-        bool wrap = snippet["wrap"].toString() == "true";
-        
-        // 创建按钮
-        SnippetButton *button = new SnippetButton(title, content, wrap);
-        connect(button, &QPushButton::clicked, this, &MainWindow::onButtonClicked);
-        
-        // 计算按钮宽度（估算值）
-        QFontMetrics fontMetrics(button->font());
-        int buttonWidth = fontMetrics.horizontalAdvance(title) + buttonMargin;
-        
-        // 添加按钮到当前行
-        currentRowLayout->addWidget(button);
-        currentRowWidth += buttonWidth;
-        
-        // 如果需要换行或者是最后一个按钮
-        if (wrap || i == snippets.size() - 1) {
-            currentRowLayout->addStretch();
-            groupLayout->addLayout(currentRowLayout);
-            
-            // 更新最大行宽
-            m_maxButtonRowWidth = qMax(m_maxButtonRowWidth, currentRowWidth);
-            
-            // 如果不是最后一个按钮，创建新的行布局
-            if (i < snippets.size() - 1) {
-                currentRowLayout = new QHBoxLayout();
-                currentRowWidth = 0;
+    // Create group boxes and buttons for each snippet group
+    const QVector<SnippetGroup> &groups = m_snippetManager.getGroups();
+    for (const SnippetGroup &group : groups) {
+        QGroupBox *groupBox = new QGroupBox(group.name, scrollWidget);
+        QVBoxLayout *groupLayout = new QVBoxLayout(groupBox);
+        groupLayout->setSpacing(5);
+
+        QHBoxLayout *currentRowLayout = new QHBoxLayout();
+        currentRowLayout->setSpacing(5);
+
+        for (int i = 0; i < group.snippets.size(); ++i) {
+            const Snippet &snippet = group.snippets[i];
+
+            QPushButton *button = new QPushButton(snippet.title, groupBox);
+            button->setToolTip(snippet.content);
+            button->setProperty("snippetContent", snippet.content);
+
+            connect(button, &QPushButton::clicked, this, &MainWindow::onSnippetButtonClicked);
+
+            currentRowLayout->addWidget(button);
+
+            // Add to new row if wrap is true or it's the last snippet
+            if (snippet.wrap || i == group.snippets.size() - 1) {
+                currentRowLayout->addStretch();
+                groupLayout->addLayout(currentRowLayout);
+
+                // Only create a new layout if this isn't the last snippet
+                if (i < group.snippets.size() - 1) {
+                    currentRowLayout = new QHBoxLayout();
+                    currentRowLayout->setSpacing(5);
+                }
             }
         }
+
+        m_mainLayout->addWidget(groupBox);
     }
-    
-    mainLayout->addWidget(groupBox);
+
+    m_mainLayout->addStretch();
+
+    // Set up the main layout for the central widget
+    QVBoxLayout *centralLayout = new QVBoxLayout(m_centralWidget);
+    centralLayout->setContentsMargins(0, 0, 0, 0);
+    centralLayout->addWidget(m_scrollArea);
 }
 
-void MainWindow::onButtonClicked()
+void MainWindow::calculateOptimalSize()
 {
-    SnippetButton *button = qobject_cast<SnippetButton *>(sender());
+    // Get the current screen
+    QScreen *screen = QApplication::primaryScreen();
+    QRect screenGeometry = screen->geometry();
+
+    // Calculate max height (70% of screen height)
+    int maxHeight = screenGeometry.height() * 0.7;
+
+    // Calculate width based on the widest row of buttons
+    QFontMetrics fm(font());
+    const QVector<SnippetGroup> &groups = m_snippetManager.getGroups();
+
+    m_maxButtonRowWidth = 0;
+    for (const SnippetGroup &group : groups) {
+        int rowWidth = calculateMaxRowWidth(group.snippets);
+        if (rowWidth > m_maxButtonRowWidth) {
+            m_maxButtonRowWidth = rowWidth;
+        }
+    }
+
+    // Add padding, margins, and scrollbar width
+    int optimalWidth = m_maxButtonRowWidth + 50;
+
+    // Ensure the width is reasonable
+    optimalWidth = qMax(300, qMin(optimalWidth, screenGeometry.width() - 100));
+
+    // Resize the window
+    resize(optimalWidth, maxHeight);
+
+    // Center on screen
+    setGeometry(QStyle::alignedRect(
+        Qt::LeftToRight,
+        Qt::AlignCenter,
+        size(),
+        screenGeometry
+    ));
+}
+
+int MainWindow::calculateMaxRowWidth(const QVector<Snippet> &snippets)
+{
+    QFontMetrics fm(font());
+    int currentRowWidth = 0;
+    int maxRowWidth = 0;
+
+    for (const Snippet &snippet : snippets) {
+        // Estimate button width: text width + padding
+        int buttonWidth = fm.horizontalAdvance(snippet.title) + 20;
+
+        currentRowWidth += buttonWidth + 5; // Add button spacing
+
+        if (snippet.wrap) {
+            maxRowWidth = qMax(maxRowWidth, currentRowWidth);
+            currentRowWidth = 0;
+        }
+    }
+
+    // Check the last row if it didn't end with a wrap
+    maxRowWidth = qMax(maxRowWidth, currentRowWidth);
+
+    return maxRowWidth;
+}
+
+void MainWindow::onSnippetButtonClicked()
+{
+    QPushButton *button = qobject_cast<QPushButton*>(sender());
     if (button) {
-        // 将按钮内容复制到剪贴板
-        QClipboard *clipboard = QApplication::clipboard();
-        clipboard->setText(button->content());
-        
-        // 模拟Ctrl+V按键（剪贴板内容粘贴）
-        // 注意：这种方法在某些系统中可能不工作，需要更复杂的实现
-        // 这里只是将内容放到剪贴板上，用户可以手动粘贴
+        QString content = button->property("snippetContent").toString();
+        m_inputSimulator.sendTextToActiveWindow(content);
     }
 }
 
-void MainWindow::onAlwaysOnTopToggled(bool checked)
+void MainWindow::toggleAlwaysOnTop()
 {
+    m_alwaysOnTop = !m_alwaysOnTop;
+
     Qt::WindowFlags flags = windowFlags();
-    if (checked) {
+    if (m_alwaysOnTop) {
         flags |= Qt::WindowStaysOnTopHint;
     } else {
         flags &= ~Qt::WindowStaysOnTopHint;
     }
+
     setWindowFlags(flags);
-    show(); // 需要重新显示窗口以应用新标志
+    show(); // Window needs to be shown again after changing flags
+
+    QSettings settings;
+    settings.setValue("AlwaysOnTop", m_alwaysOnTop);
 }
 
-void MainWindow::adjustWindowSize()
+void MainWindow::loadSettings()
 {
-    // 获取屏幕尺寸
-    QScreen *screen = QGuiApplication::primaryScreen();
-    QRect screenGeometry = screen->availableGeometry();
-    
-    // 计算窗口尺寸
-    int width = m_maxButtonRowWidth + 60; // 添加额外空间以容纳滚动条和边距
-    int height = screenGeometry.height() * 0.7; // 窗口高度为屏幕高度的70%
-    
-    // 确保宽度不会太小
-    width = qMax(width, 300);
-    
-    // 调整窗口尺寸
-    resize(width, height);
-    
-    // 将窗口移动到屏幕中央
-    move(screenGeometry.center() - rect().center());
+    QSettings settings;
+    m_alwaysOnTop = settings.value("AlwaysOnTop", true).toBool();
+
+    // Restore geometry if available
+    if (settings.contains("WindowGeometry")) {
+        restoreGeometry(settings.value("WindowGeometry").toByteArray());
+    }
+}
+
+void MainWindow::saveWindowGeometry()
+{
+    QSettings settings;
+    settings.setValue("WindowGeometry", saveGeometry());
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    saveWindowGeometry();
+    event->accept();
+}
+
+void MainWindow::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_dragPosition = event->globalPos() - frameGeometry().topLeft();
+        m_isDragging = true;
+        event->accept();
+    }
+}
+
+void MainWindow::mouseMoveEvent(QMouseEvent *event)
+{
+    if (event->buttons() & Qt::LeftButton && m_isDragging) {
+        move(event->globalPos() - m_dragPosition);
+        event->accept();
+        m_geometrySaveTimer->start(); // Start timer to save position
+    }
+}
+
+void MainWindow::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        m_isDragging = false;
+        event->accept();
+    }
 }

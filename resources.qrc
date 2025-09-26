@@ -1,5 +1,7 @@
+<!DOCTYPE RCC>
 <RCC>
     <qresource prefix="/">
         <file>resources/resume_data.json</file>
+        <file>resources/icon.ico</file>
     </qresource>
 </RCC>

@@ -1,19 +1,20 @@
 #include "mainwindow.h"
 #include <QApplication>
 #include <QFile>
-#include <QJsonDocument>
+#include <QDir>
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
+    QApplication app(argc, argv);
 
-    // 设置应用程序信息
-    QApplication::setApplicationName("秋招神器");
-    QApplication::setOrganizationName("BattleforAzeroth");
+    // Set application information
+    app.setApplicationName("秋招神器");
+    app.setOrganizationName("AutumnRecruitHelper");
+    app.setOrganizationDomain("example.com");
 
-    // 创建并显示主窗口
-    MainWindow w;
-    w.show();
+    // Create and show the main window
+    MainWindow window;
+    window.show();
 
-    return a.exec();
+    return app.exec();
 }
